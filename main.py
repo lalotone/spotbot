@@ -47,6 +47,7 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if is_valid_url(command_data[1]):
             # If no folder specified, use common folder
             if len(command_data) < 3:
+                artist_name = 'empty'
                 music_folder = 'common'
             else:
                 artist_name = ' '.join(command_data[2:])
