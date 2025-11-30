@@ -125,19 +125,16 @@ def download_data(url, download_path, music_folder):
             url
         ]
 
-        print(f"Running command: {command}")
         result = subprocess.run(
             command,
             capture_output=True,
             text=True,
-            timeout=600  # 10 minute timeout for playlists
+            timeout=1800  # 30 minute timeout for playlists
         )
 
         return result.returncode == 0
 
     except subprocess.TimeoutExpired:
-        print(f"Download timeout for URL: {url}")
         return False
     except Exception as e:
-        print(f"Download error: {e}")
         return False
