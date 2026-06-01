@@ -1,2 +1,2 @@
 python-telegram-bot==22.5
-spotdl==4.4.3
+yt-dlp

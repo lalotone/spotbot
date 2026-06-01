@@ -48,7 +48,7 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     command_data = update.message.text.split(' ')
     if len(command_data) < 2:
-        await update.message.reply_text(f'Invalid number of parameters: /download URL [optional_path]')
+        await update.message.reply_text('Usage: /download <YouTube or YouTube Music URL> [optional folder name]')
     else:
         if is_valid_url(command_data[1]):
             # If no folder specified, use common folder
@@ -72,7 +72,7 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text(f'Invalid URL: {command_data[1]}')
 
 if __name__ == "__main__":
-    logger.info("Starting Telegram SpotDL Bot...")
+    logger.info("Starting Telegram Music Downloader Bot (yt-dlp)...")
     setup_data = bootstrap()
 
     app = ApplicationBuilder().token(setup_data['token']).build()

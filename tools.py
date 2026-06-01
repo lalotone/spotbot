@@ -1,7 +1,31 @@
 import re
 from urllib.parse import urlparse
 import os
-import subprocess
+import yt_dlp
+
+from logger import setup_logger
+
+logger = setup_logger(__name__)
+
+
+class _YTDLPLogger:
+    """Routes yt-dlp output through the bot's logging system."""
+
+    def debug(self, msg):
+        if msg.startswith('[debug] '):
+            logger.debug(msg)
+        else:
+            logger.info(msg)
+
+    def info(self, msg):
+        logger.info(msg)
+
+    def warning(self, msg):
+        logger.warning(msg)
+
+    def error(self, msg):
+        logger.error(msg)
+
 
 def is_valid_url(url: str, allow_localhost: bool = False) -> bool:
     """
@@ -27,14 +51,16 @@ def is_valid_url(url: str, allow_localhost: bool = False) -> bool:
     if not (url.startswith('http://') or url.startswith('https://')):
         return False
 
-    # Block dangerous characters that could be used for injection
+    # Block dangerous characters that could be used for injection.
+    # Note: '&' is intentionally excluded — it is a standard query-param
+    # separator used in YouTube/YouTube Music URLs (e.g. ?v=X&list=Y).
     dangerous_chars = [
-        '\n', '\r',  # Newlines
-        '\x00',  # Null bytes
-        '<', '>',  # HTML tags
-        '`',  # Command execution
-        '|', ';', '&',  # Command chaining
-        '$', '(',  # Variable expansion
+        '\n', '\r',   # Newlines
+        '\x00',       # Null bytes
+        '<', '>',     # HTML tags
+        '`',          # Command execution
+        '|', ';',     # Command chaining / shell separator
+        '$', '(',     # Variable expansion
     ]
 
     for char in dangerous_chars:
@@ -98,43 +124,53 @@ def is_valid_url(url: str, allow_localhost: bool = False) -> bool:
 
 def to_snake_case(text: str) -> str:
     """Convert text to snake_case"""
-    # Replace spaces and hyphens with underscores
     text = text.replace(' ', '_').replace('-', '_')
-    # Remove special characters
     text = re.sub(r'[^a-zA-Z0-9_]', '', text)
-    # Convert to lowercase
     text = text.lower()
-    # Replace multiple underscores with single underscore
     text = re.sub(r'_+', '_', text)
-    # Remove leading/trailing underscores
     text = text.strip('_')
-
     return text if text else 'common'
 
-def download_data(url, download_path, music_folder):
+
+def download_data(url: str, download_path: str, music_folder: str) -> bool:
+    """
+    Download audio from a YouTube / YouTube Music URL (single track or playlist)
+    using yt-dlp's Python API. Saves as mp3 at 320 kbps.
+
+    Returns True on success, False on any error.
+    """
     final_path = os.path.join(download_path, music_folder)
     try:
-        if not os.path.isdir(final_path):
-            os.mkdir(final_path)
-        # Use spotdl to download
-        command = [
-            'spotdl',
-            '--output', final_path,
-            '--format', 'mp3',  # Output format
-            '--bitrate', '320k',
-            url
-        ]
+        os.makedirs(final_path, exist_ok=True)
 
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=1800  # 30 minute timeout for playlists
-        )
+        ydl_opts = {
+            # Best available audio; fall back to best combined stream
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '320',
+            }],
+            # Embed metadata and thumbnail into the mp3
+            'postprocessor_args': ['-id3v2_version', '3'],
+            'outtmpl': os.path.join(final_path, '%(title)s.%(ext)s'),
+            # Route yt-dlp log output through the bot logger
+            'logger': _YTDLPLogger(),
+            # For playlists: skip individual failures rather than aborting
+            'ignoreerrors': True,
+            # Retries on transient network errors
+            'retries': 5,
+            'fragment_retries': 5,
+        }
 
-        return result.returncode == 0
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ret = ydl.download([url])
+            # yt-dlp returns 0 on full success, non-zero if any download failed
+            return ret == 0
 
-    except subprocess.TimeoutExpired:
+    except yt_dlp.utils.DownloadError as e:
+        logger.error(f"yt-dlp DownloadError: {e}")
         return False
     except Exception as e:
+        logger.error(f"Unexpected error during download: {e}")
         return False
