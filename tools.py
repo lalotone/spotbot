@@ -143,15 +143,22 @@ def download_data(url: str, download_path: str, music_folder: str) -> bool:
     try:
         os.makedirs(final_path, exist_ok=True)
 
+        files_before = set(os.listdir(final_path))
+
         ydl_opts = {
             # Best available audio; fall back to best combined stream
             'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '320',
-            }],
-            # Embed metadata and thumbnail into the mp3
+            'postprocessors': [
+                {
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '320',
+                },
+                {
+                    'key': 'FFmpegMetadata',
+                    'add_metadata': True,
+                },
+            ],
             'postprocessor_args': ['-id3v2_version', '3'],
             'outtmpl': os.path.join(final_path, '%(title)s.%(ext)s'),
             # Route yt-dlp log output through the bot logger
@@ -165,8 +172,14 @@ def download_data(url: str, download_path: str, music_folder: str) -> bool:
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ret = ydl.download([url])
-            # yt-dlp returns 0 on full success, non-zero if any download failed
-            return ret == 0
+
+        files_after = set(os.listdir(final_path))
+        new_files = files_after - files_before
+        # With ignoreerrors=True, yt-dlp returns non-zero if any individual
+        # track in a playlist fails, even when the rest downloaded successfully.
+        # Treat as success if new files were created, or if yt-dlp itself
+        # reported clean success (covers single tracks already present).
+        return len(new_files) > 0 or ret == 0
 
     except yt_dlp.utils.DownloadError as e:
         logger.error(f"yt-dlp DownloadError: {e}")
