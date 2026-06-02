@@ -132,10 +132,14 @@ def to_snake_case(text: str) -> str:
     return text if text else 'common'
 
 
-def download_data(url: str, download_path: str, music_folder: str) -> bool:
+def download_data(url: str, download_path: str, music_folder: str, progress_callback=None) -> bool:
     """
     Download audio from a YouTube / YouTube Music URL (single track or playlist)
     using yt-dlp's Python API. Saves as mp3 at 320 kbps.
+
+    progress_callback(status, title, pct, speed, eta, playlist_index, playlist_count)
+    is called from the yt-dlp download thread on each progress event. Callers must
+    handle thread-safety themselves (e.g. asyncio.run_coroutine_threadsafe).
 
     Returns True on success, False on any error.
     """
@@ -144,6 +148,41 @@ def download_data(url: str, download_path: str, music_folder: str) -> bool:
         os.makedirs(final_path, exist_ok=True)
 
         files_before = set(os.listdir(final_path))
+
+        def _progress_hook(d):
+            if progress_callback is None:
+                return
+            try:
+                info = d.get('info_dict', {})
+                title = info.get('title') or d.get('filename', 'Unknown')
+                playlist_index = info.get('playlist_index')
+                playlist_count = info.get('playlist_count')
+                status = d['status']
+
+                if status == 'downloading':
+                    downloaded = d.get('downloaded_bytes', 0)
+                    total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+                    pct = (downloaded / total * 100) if total else 0.0
+                    speed = d.get('_speed_str', '?')
+                    eta = d.get('_eta_str', '?')
+                elif status == 'finished':
+                    pct = 100.0
+                    speed = None
+                    eta = None
+                else:
+                    return
+
+                progress_callback(
+                    status=status,
+                    title=title,
+                    pct=pct,
+                    speed=speed,
+                    eta=eta,
+                    playlist_index=playlist_index,
+                    playlist_count=playlist_count,
+                )
+            except Exception:
+                pass  # Never let a progress error abort the download
 
         ydl_opts = {
             # Best available audio; fall back to best combined stream
@@ -168,6 +207,7 @@ def download_data(url: str, download_path: str, music_folder: str) -> bool:
             # Retries on transient network errors
             'retries': 5,
             'fragment_retries': 5,
+            'progress_hooks': [_progress_hook],
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

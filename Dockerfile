@@ -19,10 +19,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . .
-
-# Set ownership
-RUN chown -R 1000:1000 /app
+COPY --chown=1000:1000 . .
 
 # Switch to non-root user
 USER 1000:1000
