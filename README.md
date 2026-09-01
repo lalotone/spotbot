@@ -17,7 +17,26 @@ Examples:
 /download https://music.youtube.com/watch?v=...
 ```
 
-Downloaded files are placed under `DOWNLOAD_FOLDER/<folder_name>/` as `<title>.mp3`. Playlists are supported — individual failures are skipped rather than aborting the whole download.
+### Downloading a list of URLs
+
+Attach a text file with one URL per line to the `/download` command. Every URL in the file is downloaded into the `various` folder by default; a folder name can be given to override that. Blank lines and `#` comments are ignored, and invalid lines are skipped with a warning.
+
+```
+/download
+/download My Mixed Bag
+```
+
+(attach a `.txt` file like this to the message)
+
+```
+https://www.youtube.com/watch?v=...
+https://music.youtube.com/watch?v=...
+# comment lines are ignored
+```
+
+List files are limited to 512 KB.
+
+Downloaded files are placed under `DOWNLOAD_FOLDER/<folder_name>/` as `<title>.mp3`. Playlists are supported — individual failures are skipped rather than aborting the whole download. Only one download (single or list) runs at a time; further requests wait their turn. Progress is shown by editing the status message, and a summary is posted when a list finishes.
 
 ## Configuration
 

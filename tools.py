@@ -1,3 +1,4 @@
+import ipaddress
 import re
 from urllib.parse import urlparse
 import os
@@ -85,25 +86,24 @@ def is_valid_url(url: str, allow_localhost: bool = False) -> bool:
         if not parsed.netloc:
             return False
 
-        # Block localhost/private IPs unless explicitly allowed
-        if not allow_localhost:
-            blocked_hosts = [
-                'localhost',
-                '127.0.0.1',
-                '0.0.0.0',
-                '::1',
-            ]
-            if parsed.netloc.lower().split(':')[0] in blocked_hosts:
-                return False
+        # Block localhost, private and reserved IP addresses unless explicitly
+        # allowed. Handles IPv4 literals, CIDR-style hostnames and IPv6 literals
+        # (bracketed in the netloc, e.g. http://[::1]:8000/).
+        hostname = _extract_hostname(parsed.netloc)
+        if hostname is None:
+            return False
+        hostname = hostname.lower()
 
-            # Block private IP ranges
-            if parsed.netloc.startswith('10.') or \
-                    parsed.netloc.startswith('192.168.') or \
-                    parsed.netloc.startswith('172.'):
+        if not allow_localhost:
+            try:
+                if ipaddress.ip_address(hostname).is_private:
+                    return False
+            except ValueError:
+                pass  # Not an IP literal; validated as a domain below
+            if hostname == 'localhost':
                 return False
 
         # Domain validation - must contain at least one dot
-        hostname = parsed.netloc.split(':')[0]  # Remove port if present
         if '.' not in hostname and hostname != 'localhost':
             return False
 
@@ -120,6 +120,20 @@ def is_valid_url(url: str, allow_localhost: bool = False) -> bool:
 
     except Exception:
         return False
+
+
+def _extract_hostname(netloc: str):
+    """Return the bare hostname from a parsed URL's netloc.
+
+    Strips userinfo, port and IPv6 brackets: 'user@host:8080' -> 'host',
+    '[::1]:80' -> '::1'. Returns None if the netloc is unusable.
+    """
+    host = netloc.rsplit('@', 1)[-1]
+    if host.startswith('[') and ']' in host:
+        host = host[1:host.index(']')]
+    else:
+        host = host.rsplit(':', 1)[0]
+    return host or None
 
 
 def to_snake_case(text: str) -> str:
