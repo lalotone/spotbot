@@ -19,14 +19,16 @@ Examples:
 
 ### Downloading a list of URLs
 
-Attach a text file with one URL per line to the `/download` command. Every URL in the file is downloaded into the `various` folder by default; a folder name can be given to override that. Blank lines and `#` comments are ignored, and invalid lines are skipped with a warning.
+Send the bot a single file (a `.txt` with one URL per line) and write the command as the file's **caption**:
 
 ```
-/download
-/download My Mixed Bag
+/download                      (caption of the attached .txt)
+/download My Mixed Bag         (caption + override the output folder)
 ```
 
-(attach a `.txt` file like this to the message)
+Every URL in the file is downloaded into the `various` folder by default; the folder name in the caption overrides that. Blank lines and `#` comments are ignored, and invalid lines are skipped with a warning.
+
+Example file content:
 
 ```
 https://www.youtube.com/watch?v=...

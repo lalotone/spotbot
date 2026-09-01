@@ -7,7 +7,7 @@ from logger import setup_logger
 
 from telegram import Update
 from telegram.error import BadRequest
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 # Base setup
 # -------------
@@ -19,8 +19,9 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # If no name is specified after link, music will be placed in a folder named "common"
 # If a name is specified, it is snake_cased and used as the folder name; the folder
 # is created if necessary
-# A text file with one URL per line can be attached instead: those go to "various"
-# (or to the given folder name, if any)
+# A text file with one URL per line can be attached instead; the /download command
+# is written as the file caption: those go to "various" (or to the given folder
+# name, if any)
 # Check userID, if not allowed, no response
 # Downloads run in a thread pool executor via yt-dlp's Python API
 
@@ -29,6 +30,30 @@ logger = setup_logger(__name__)
 DOWNLOAD_LOCK = asyncio.Lock()
 MAX_LIST_FILE_BYTES = 512 * 1024
 LIST_DEFAULT_FOLDER = 'various'
+LIST_USAGE = ('Usage with a file: /download [optional folder name] as the file '
+              'caption + attached .txt with one URL per line')
+
+
+def _parse_list_command(caption, bot_username):
+    """Parse a file caption of the form '/download [@botname] [folder ...]'.
+
+    Returns the list of args (possibly empty), or None when the caption is not
+    a /download command."""
+    if not caption:
+        return None
+    parts = caption.split()
+    if not parts:
+        return None
+    head = parts[0].lstrip('/')
+    if not head.lower().startswith('download'):
+        return None
+    suffix = head[len('download'):]
+    if suffix:
+        if not suffix.startswith('@') or not bot_username:
+            return None
+        if suffix[1:].lower() != bot_username.lower():
+            return None
+    return parts[1:]
 
 
 def _parse_user_ids(raw: str) -> list:
@@ -96,7 +121,7 @@ async def _fetch_url_list(message) -> list:
     if document.file_size is None or document.file_size > MAX_LIST_FILE_BYTES:
         raise ValueError('file is larger than 512 KB')
     tg_file = await document.get_file()
-    chunk = await tg_file.download_as_byte_array()
+    chunk = await tg_file.download_as_bytearray()
     raw = bytes(chunk).decode('utf-8', errors='replace')
     urls = [line.strip() for line in raw.splitlines()]
     urls = [u for u in urls if u and not u.startswith('#') and is_valid_url(u)]
@@ -124,19 +149,19 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     message = update.effective_message
-    if message is None or not message.text:
-        return
-
-    command_data = message.text.split()
-    if not command_data:
+    if message is None:
         return
 
     if message.document is not None:
-        args = command_data[1:]
+        # With an attached file there is no message.text; the /download command
+        # (and any folder name) is written as the file caption.
+        args = _parse_list_command(message.caption, context.bot.username)
+        if args is None:
+            await message.reply_text(LIST_USAGE)
+            return
         if args and is_valid_url(args[0]):
             await message.reply_text(
-                'A URL was given together with an attached file.\n'
-                'Usage with a file: /download [optional folder name] + attached .txt with one URL per line'
+                'A URL was given together with an attached file.\n' + LIST_USAGE
             )
             return
         if args:
@@ -156,6 +181,13 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await message.reply_text('No valid URLs found in the attached file.')
             return
         await _download_url_list(message, urls, download_path, folder)
+        return
+
+    if not message.text:
+        return
+
+    command_data = message.text.split()
+    if not command_data:
         return
 
     if len(command_data) < 2:
@@ -225,6 +257,9 @@ if __name__ == "__main__":
     app.bot_data['user_ids'] = setup_data['user_ids']
     app.bot_data['download_path'] = setup_data['download_path']
     app.add_handler(CommandHandler("download", download))
+    # CommandHandler never matches commands in a file caption, so attached
+    # .txt lists (with the /download command as caption) need their own handler.
+    app.add_handler(MessageHandler(filters.UpdateType.MESSAGES & filters.Document.ALL, download))
 
     logger.info("Bot started successfully! Listening for commands...")
     app.run_polling()
